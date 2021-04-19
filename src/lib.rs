@@ -51,6 +51,7 @@ pub enum ReportReason {
     Reported,
 }
 
+// New Pallet Syntax : Should we change from procedural macros to attributes macros ?
 decl_error! {
     pub enum Error for Module<T: Config> {
         CollectionNotFound,
@@ -71,6 +72,9 @@ pub struct ClassData {
     pub name: Vec<u8>,
 }
 
+// Does it make sense to keep this struct as externally defined ?
+// It seems that we don't need it for this pallet purposes
+// (same question for ClassData)
 #[derive(Encode, Decode, Clone, RuntimeDebug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 pub struct TokenData {
@@ -127,6 +131,7 @@ decl_module! {
 
         #[weight = T::BlockWeights::get().max_block / 100]
         pub fn set_curator(origin, curator: T::AccountId) -> DispatchResult {
+            // Setting curator needs root, how to set it on Kusama live chain ?
             ensure_root(origin)?;
             Curator::<T>::put(curator);
             Ok(())
@@ -135,6 +140,7 @@ decl_module! {
         #[weight = T::BlockWeights::get().max_block / 100]
         pub fn create_collection(origin, metadata: Vec<u8>, class_data: T::ClassData) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            // Does it make sense to have a list of curators, set by the creator/studio owner when creating the collection ?
             let collection_id = nft::Pallet::<T>::create_class(&who, metadata, class_data)?;
             Self::deposit_event(RawEvent::CollectionCreated(collection_id));
             Ok(())
@@ -153,6 +159,10 @@ decl_module! {
             //T::Currency::set_lock(PALLET_ID, &who, T::DefaultCost::get(), WithdrawReasons::all());
             // agree there needs to be some cost but I'm not certain it should be via lock since tokens
             // are transferred
+            // The cost could be included in the weight ?
+            // Or simply transfer from the creator to the treasury (?) or a charity pot (new feature) ?
+            // Should we store/remember the minter ("creator") of the token ?
+            // (add to extended token info)
             let token_id = nft::Pallet::<T>::mint(&who, collection_id, metadata, token_data)?;
             Self::deposit_event(RawEvent::TokenMinted(collection_id, token_id));
             Ok(())
@@ -182,6 +192,7 @@ decl_module! {
             let who = ensure_signed(origin)?;
             let token = nft::Pallet::<T>::tokens(collection_id, token_id).ok_or(Error::<T>::TokenNotFound)?;
 
+            // Could the curator be allowed to toggle display ?
             ensure!(token.owner == who, Error::<T>::NotTokenOwner);
 
             let mut info = TokenExtendedInfo::<T>::get(collection_id, token_id).unwrap_or_else(|| ExtendedInfo {
@@ -250,6 +261,9 @@ decl_module! {
             ensure!(info.frozen == false, Error::<T>::TokenFrozen);
 
             if let Some(offer) = Offers::<T>::get((collection_id, token_id), buyer_address.clone()){
+                // The whole offer amount goes to the owner, as in the real life :)
+                // Could we imagine that some (%) could got to the artist/creator/minter ?
+                // (each time the piece of art is sell)
                 T::Currency::repatriate_reserved(&buyer_address, &who, offer, BalanceStatus::Free)?;
                 Offers::<T>::remove((collection_id, token_id), who.clone());
                 nft::Pallet::<T>::transfer(&who, &buyer_address, (collection_id, token_id))?;
@@ -267,6 +281,8 @@ decl_module! {
             let who = ensure_signed(origin)?;
             let token = nft::Pallet::<T>::tokens(collection_id, token_id).ok_or(Error::<T>::TokenNotFound)?;
 
+            // Only the offer creator could cancel the offer (make sense).
+            // Is there a missing 'refuse_offer' for the owner to refuse the offer ?
             if let Some(offer) = Offers::<T>::get((collection_id, token_id), who.clone()){
                 T::Currency::unreserve(&who, offer);
                 Offers::<T>::remove((collection_id, token_id), who.clone());
@@ -290,7 +306,7 @@ decl_module! {
                 report: ReportReason::None,
                 frozen: false
             });
-
+            // Does it make sense to automatically accept a report created by the curator ?
             info.report = reason.clone();
             TokenExtendedInfo::<T>::insert(collection_id, token_id, info);
             Self::deposit_event(RawEvent::ReportReceived(collection_id, token_id, reason));
@@ -310,8 +326,8 @@ decl_module! {
                 report: ReportReason::None,
                 frozen: false
             });
-
             info.report = ReportReason::Reported;
+            // At this stage, the initial report reason is forgotten. Do we care ?
             Self::deposit_event(RawEvent::ReportAccepted(collection_id, token_id));
             Ok(())
         }
@@ -343,7 +359,9 @@ decl_module! {
             let collection = nft::Pallet::<T>::classes(collection_id).ok_or(Error::<T>::CollectionNotFound)?;
 
             ensure!(Curator::<T>::get() == who || collection.owner == who, Error::<T>::NotCollectionOwnerOrCurator);
-
+            // Some unittests seems missing here for error cases.
+            // Should I add them ?
+            // (and for others methods)
             let info = TokenExtendedInfo::<T>::get(collection_id, token_id).unwrap_or_else(|| ExtendedInfo {
                 display_flag: false,
                 report: ReportReason::None,
@@ -369,6 +387,7 @@ pub struct ChibaSwapAction<T: Config> {
 
 
 // TODO: how are these capabilities actually used?
+// Same question :)
 impl<T: Config> pallet_atomic_swap::SwapAction<<T as frame_system::Config>::AccountId, T>
     for ChibaSwapAction<T>
 {
